@@ -273,7 +273,7 @@ public class DynamicSkiesConfig extends Config {
         openFolder(imageFolder());
     }
 
-    public static final String AUDIO_GUIDE_URL = "https://github.com/ooTruffle/Dynamic-Sky-s/blob/master/docs/AUDIO_SETUP.md";
+    public static final String AUDIO_GUIDE_URL = "https://github.com/ooTruffle/Dynamic-Skys/blob/master/docs/AUDIO_SETUP.md";
 
     /** Prints a clickable link to the audio setup guide in chat. */
     public static void guideLink() {
