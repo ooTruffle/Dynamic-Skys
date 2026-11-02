@@ -1,6 +1,10 @@
 # Dynamic Skies
 
 Animated shader skies for Minecraft 1.8.9 (Ornithe + OneConfig) that can react to music.
+![Powered by OneConfig](https://polyfrost.org/media/branding/badges/badge_1.svg)
+
+# AI Disclosure
+This is HEVALY vibecoded mod , feel free to pr to clean up the code^^
 
 ![All skies](docs/sky-previews.png)
 
