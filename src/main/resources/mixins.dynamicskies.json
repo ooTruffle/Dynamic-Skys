@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "compatibilityLevel": "JAVA_${java_version}",
+  "package": "com.ootruffle.dynamicskies.mixins",
+  "refmap": "mixins.${mod_id}.refmap.json",
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "client": [
+    "RenderGlobalMixin",
+    "EntityRendererMixin"
+  ]
+}
