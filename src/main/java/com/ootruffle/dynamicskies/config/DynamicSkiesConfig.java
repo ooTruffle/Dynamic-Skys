@@ -6,7 +6,10 @@ import com.ootruffle.dynamicskies.gui.SkyBrowserScreen;
 import com.ootruffle.dynamicskies.sky.SkyRenderer;
 import com.ootruffle.dynamicskies.sky.SkyType;
 import net.minecraft.client.Minecraft;
+import net.minecraft.event.ClickEvent;
 import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.ChatStyle;
+import net.minecraft.util.EnumChatFormatting;
 import org.polyfrost.compose.render.PolyColor;
 import org.polyfrost.oneconfig.api.config.v1.Config;
 import org.polyfrost.oneconfig.api.config.v1.Property;
@@ -193,6 +196,12 @@ public class DynamicSkiesConfig extends Config {
         for (String line : AudioManager.describeDevices()) {
             chat(line);
         }
+        guideLink();
+    }
+
+    @Button(title = "Audio Setup Guide", text = "Open", description = "Opens the guide for setting up Voicemeeter or VB-CABLE in your browser.", category = "Audio", subcategory = "Source")
+    public void openAudioGuide() {
+        openUrl(AUDIO_GUIDE_URL);
     }
 
     @Button(title = "Restart Audio", text = "Restart", category = "Audio", subcategory = "Source")
@@ -262,6 +271,26 @@ public class DynamicSkiesConfig extends Config {
     @Button(title = "Open Image Folder", text = "Open", category = "Custom", subcategory = "Custom Image")
     public void openImageFolder() {
         openFolder(imageFolder());
+    }
+
+    public static final String AUDIO_GUIDE_URL = "https://github.com/ooTruffle/Dynamic-Sky-s/blob/master/docs/AUDIO_SETUP.md";
+
+    /** Prints a clickable link to the audio setup guide in chat. */
+    public static void guideLink() {
+        chatLink("Need help? Click to open the audio setup guide.", AUDIO_GUIDE_URL);
+    }
+
+    private static void openUrl(String url) {
+        // Same as openFolder: no java.awt.Desktop, so ask the OS to open it.
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        String[] cmd = os.contains("win") ? new String[]{"rundll32", "url.dll,FileProtocolHandler", url}
+                : os.contains("mac") ? new String[]{"open", url}
+                : new String[]{"xdg-open", url};
+        try {
+            new ProcessBuilder(cmd).start();
+        } catch (Throwable t) {
+            chatLink(url, url);
+        }
     }
 
     private static void openFolder(File dir) {
@@ -347,5 +376,22 @@ public class DynamicSkiesConfig extends Config {
         } else {
             Log.info(msg);
         }
+    }
+
+    /** A chat line that opens {@code url} when clicked. */
+    public static void chatLink(String text, String url) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.thePlayer == null) {
+            Log.info(text + " " + url);
+            return;
+        }
+        ChatComponentText link = new ChatComponentText(text);
+        link.setChatStyle(new ChatStyle()
+                .setColor(EnumChatFormatting.AQUA)
+                .setUnderlined(true)
+                .setChatClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, url)));
+        ChatComponentText line = new ChatComponentText("§b[Dynamic Skies]§r ");
+        line.appendSibling(link);
+        mc.thePlayer.addChatMessage(line);
     }
 }

@@ -11,7 +11,7 @@ ploceus {
 
 val modId = "dynamicskies"
 val modName = "Dynamic Skies"
-val modVersion = "1.2.0"
+val modVersion = "1.2.1"
 val mcVersion = "1.8.9"
 val loaderVersion = "0.19.5"
 val oslVersion = "0.21.0"

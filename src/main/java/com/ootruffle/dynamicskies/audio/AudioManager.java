@@ -24,6 +24,8 @@ public final class AudioManager {
     private static String runningFilter;
     private static boolean restartRequested;
     private static String reportedError;
+    /** When the current capture started; errors wait a moment so typing a device name doesn't spam chat. */
+    private static long startedAt;
 
     private static float bass, mid, high, level, beat;
     private static long seenBeat;
@@ -76,6 +78,7 @@ public final class AudioManager {
             analyzer = new AudioAnalyzer(system ? "" : filter, system);
             runningFilter = filter;
             reportedError = null;
+            startedAt = System.nanoTime();
             seenBeat = 0L;
             seenDrop = 0L;
             analyzer.start();
@@ -90,9 +93,12 @@ public final class AudioManager {
         float sens = cfg.sensitivity;
 
         if (wantCapture && analyzer != null) {
-            if (analyzer.error != null && !analyzer.error.equals(reportedError)) {
+            if (analyzer.error != null && !analyzer.error.equals(reportedError)
+                    && System.nanoTime() - startedAt > 2_000_000_000L) {
                 reportedError = analyzer.error;
                 Log.warn("Audio: " + reportedError);
+                DynamicSkiesConfig.chat("§cAudio: " + reportedError);
+                DynamicSkiesConfig.guideLink();
             }
             tBass = Math.min(1f, analyzer.bass * sens);
             tMid = Math.min(1f, analyzer.mid * sens);

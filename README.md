@@ -58,4 +58,4 @@ and set its file name.
 ```
 ./gradlew build
 ```
-The jar is written to `build/libs/dynamicskies-1.0.0+1.8.9.jar`.
+The jar is written to `build/libs/dynamicskies-1.2.1+1.8.9.jar`.
