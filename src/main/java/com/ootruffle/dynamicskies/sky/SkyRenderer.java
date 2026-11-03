@@ -51,7 +51,13 @@ public final class SkyRenderer {
     private long lastCycleNanos = System.nanoTime();
 
     private long lastFrameNanos;
+    /** Animation clock in seconds. It wraps at TIME_WRAP so it stays precise as a GLSL float. */
     private double time;
+    /** When the clock wraps, the sky at the old time fades out over the restarted one. */
+    private double wrapOldTime;
+    private float wrapFade = -1f;
+    private static final double TIME_WRAP = 3600.0;
+    private static final float WRAP_FADE_SECONDS = 4f;
     private float frameAlpha;
     private boolean frameStarted;
     private boolean overlayThisFrame;
@@ -222,7 +228,7 @@ public final class SkyRenderer {
         uploadSpectrum();
         previewing = true;
         try {
-            drawPass(shader, type, 1f, false, mc.theWorld, 1f, 0f, 0f, 0f);
+            drawPass(shader, type, time, 1f, false, mc.theWorld, 1f, 0f, 0f, 0f);
         } finally {
             previewing = false;
         }
@@ -268,7 +274,19 @@ public final class SkyRenderer {
         DynamicSkiesConfig cfg = DynamicSkiesConfig.INSTANCE;
         float speed = cfg.speed * (1f + cfg.bassSpeed * cfg.reactivity * AudioManager.bass());
         speed *= 1f + AudioManager.build() * cfg.buildUpStrength * 1.5f;
-        time = (time + dt * speed) % 3600.0;
+        double step = dt * speed;
+        time += step;
+        if (wrapFade >= 0f) {
+            wrapOldTime += step;
+            wrapFade += dt / WRAP_FADE_SECONDS;
+            if (wrapFade >= 1f) wrapFade = -1f;
+        }
+        if (time >= TIME_WRAP) {
+            // Restarting the clock would make every sky jump, so fade between the two.
+            wrapOldTime = time;
+            time %= TIME_WRAP;
+            wrapFade = 0f;
+        }
         return dt;
     }
 
@@ -299,7 +317,7 @@ public final class SkyRenderer {
             }
             if (cfg.dropChangeSky) {
                 jumpOnDrop = true;
-                cfg.setSky(nextSkyIndex(cfg.sky));
+                cfg.setSkyWithoutSaving(nextSkyIndex(cfg.sky));
             }
         }
         dropHue += (dropHueTarget - dropHue) * (1f - (float) Math.exp(-dt * 2.5));
@@ -359,7 +377,7 @@ public final class SkyRenderer {
 
         if (cfg.cycleSkies && now - lastCycleNanos > (long) (cfg.cycleMinutes * 60e9)) {
             lastCycleNanos = now;
-            cfg.setSky(nextSkyIndex(cfg.sky));
+            cfg.setSkyWithoutSaving(nextSkyIndex(cfg.sky));
         } else if (!cfg.cycleSkies) {
             lastCycleNanos = now;
         }
@@ -434,10 +452,15 @@ public final class SkyRenderer {
         float f = smooth(0f, 1f, fade);
         if (prevShader != null) {
             // Overlays add up, so the old one fades out while the new one fades in.
-            drawPass(prevShader, previous, strength * (overlay ? 1f - f : 1f), overlay, world, partialTicks, fogR, fogG, fogB);
-            drawPass(shader, sky, strength * f, overlay, world, partialTicks, fogR, fogG, fogB);
+            drawPass(prevShader, previous, time, strength * (overlay ? 1f - f : 1f), overlay, world, partialTicks, fogR, fogG, fogB);
+            drawPass(shader, sky, time, strength * f, overlay, world, partialTicks, fogR, fogG, fogB);
+        } else if (wrapFade >= 0f) {
+            // Same crossfade, from the sky at the old clock to the restarted one.
+            float w = smooth(0f, 1f, wrapFade);
+            drawPass(shader, sky, wrapOldTime, strength * (overlay ? 1f - w : 1f), overlay, world, partialTicks, fogR, fogG, fogB);
+            drawPass(shader, sky, time, strength * w, overlay, world, partialTicks, fogR, fogG, fogB);
         } else {
-            drawPass(shader, sky, strength, overlay, world, partialTicks, fogR, fogG, fogB);
+            drawPass(shader, sky, time, strength, overlay, world, partialTicks, fogR, fogG, fogB);
         }
 
         GL20.glUseProgram(prevProgram);
@@ -462,7 +485,7 @@ public final class SkyRenderer {
         return true;
     }
 
-    private void drawPass(SkyShader shader, SkyType type, float alpha, boolean overlay, WorldClient world, float partialTicks,
+    private void drawPass(SkyShader shader, SkyType type, double t, float alpha, boolean overlay, WorldClient world, float partialTicks,
                           float fogR, float fogG, float fogB) {
         DynamicSkiesConfig cfg = DynamicSkiesConfig.INSTANCE;
         float react = cfg.audioSource == 0 ? 0f : cfg.reactivity;
@@ -479,7 +502,7 @@ public final class SkyRenderer {
 
         shader.bind();
         shader.setInt("uTex", 0);
-        shader.set("uTime", (float) time);
+        shader.set("uTime", (float) t);
         shader.set("uBass", AudioManager.bass() * react);
         shader.set("uMid", AudioManager.mid() * react);
         shader.set("uHigh", AudioManager.high() * react);
@@ -505,7 +528,7 @@ public final class SkyRenderer {
         shader.set("uHue", cfg.hueShift / 360f + dropHue);
         shader.set("uAudioHue", cfg.audioHue * react);
         shader.set("uBeatFlash", cfg.beatFlash * react);
-        shader.set("uImageRot", (float) (time * cfg.imageRotation * 0.05));
+        shader.set("uImageRot", (float) (t * cfg.imageRotation * 0.05));
         shader.set("uAlpha", alpha);
         shader.set("uOverlay", overlay ? 1f : 0f);
         shader.set("uOverlayCutoff", cfg.overlayCutoff);

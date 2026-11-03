@@ -17,6 +17,7 @@ import org.polyfrost.oneconfig.api.config.v1.Tree;
 import org.polyfrost.oneconfig.api.config.v1.annotations.Button;
 import org.polyfrost.oneconfig.api.config.v1.annotations.Color;
 import org.polyfrost.oneconfig.api.config.v1.annotations.Dropdown;
+import org.polyfrost.oneconfig.api.config.v1.annotations.Include;
 import org.polyfrost.oneconfig.api.config.v1.annotations.Slider;
 import org.polyfrost.oneconfig.api.config.v1.annotations.Switch;
 import org.polyfrost.oneconfig.api.config.v1.annotations.Text;
@@ -44,6 +45,14 @@ public class DynamicSkiesConfig extends Config {
             category = "Sky", subcategory = "Sky"
     )
     public int sky = 0;
+
+    /**
+     * The selected sky's id, saved next to {@link #sky}. The dropdown stores a
+     * position in the list, so this is what's trusted on load; that way the
+     * order of SkyType can change without moving anyone to a different sky.
+     */
+    @Include
+    public String skyId = "";
 
     @Button(title = "Browse Skies", text = "Open", description = "See live previews of every sky and click one to use it. Also: /dynamicskies browse",
             category = "Sky", subcategory = "Sky")
@@ -300,7 +309,7 @@ public class DynamicSkiesConfig extends Config {
         try {
             new ProcessBuilder(opener, dir.getAbsolutePath()).start();
         } catch (Throwable t) {
-            chat("Image folder: " + dir.getAbsolutePath());
+            chat("Folder: " + dir.getAbsolutePath());
         }
     }
 
@@ -328,6 +337,32 @@ public class DynamicSkiesConfig extends Config {
         hideIf("sensitivity", () -> audioSource != 1 && audioSource != 3);
         hideIf("listDevices", () -> audioSource != 1 && audioSource != 3);
         hideIf("restartAudio", () -> audioSource != 1 && audioSource != 3);
+
+        // Keep skyId following the dropdown, however the sky gets changed.
+        this.<Object>addCallback("sky", value -> {
+            if (value instanceof Number) {
+                skyId = SkyType.byIndex(((Number) value).intValue()).id;
+            }
+            return false;
+        });
+    }
+
+    @Override
+    protected void initialize(boolean byConfigManager) {
+        super.initialize(byConfigManager);
+        if (getTree() == null) {
+            return;
+        }
+        // Saved values are loaded now. Point the dropdown at the saved id; configs
+        // from before skyId existed only have the position, so take the id from that.
+        SkyType saved = SkyType.byId(skyId);
+        if (saved != null) {
+            if (saved.ordinal() != sky) {
+                getProperty("sky").setAs(saved.ordinal());
+            }
+        } else {
+            skyId = SkyType.byIndex(sky).id;
+        }
     }
 
     public static File imageFolder() {
@@ -367,6 +402,14 @@ public class DynamicSkiesConfig extends Config {
     public void setSky(int index) {
         getProperty("sky").setAs(index);
         save();
+    }
+
+    /**
+     * Changes the sky without writing the config file, for automatic changes
+     * (Cycle Skies, Change Sky On Drop) that can happen every few seconds.
+     */
+    public void setSkyWithoutSaving(int index) {
+        getProperty("sky").setAs(index);
     }
 
     public static void chat(String msg) {

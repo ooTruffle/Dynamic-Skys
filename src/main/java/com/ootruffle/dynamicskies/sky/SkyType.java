@@ -4,9 +4,11 @@ package com.ootruffle.dynamicskies.sky;
  * The one list of skies. The "Sky" dropdown in the settings is filled from it
  * (see DynamicSkiesConfig.makeTree), and the sky browser shows it.
  *
- * The saved setting is the position in this list, so add new skies at the end
- * and never reorder or remove existing ones. The id is the shader file name in
- * assets/dynamicskies/shaders/skies/.
+ * The chosen sky is saved by its id (DynamicSkiesConfig.skyId), so the list can
+ * be reordered. Never change an id: it's the saved setting, the favorites entry
+ * and the shader file name in assets/dynamicskies/shaders/skies/. Older configs
+ * only have the position and are converted on first load, so a reorder in the
+ * same release as that conversion would move those users to another sky.
  */
 public enum SkyType {
     AURORA_NIGHT("aurora_night", "Aurora Night",
@@ -63,7 +65,6 @@ public enum SkyType {
             "Your own GLSL sky from config/dynamicskies/skies."),
     NONE("none", "None (Layers Only)",
             "No sky of its own; just the layers and drop effects."),
-    // Added later; kept at the end so saved sky choices keep pointing at the same sky.
     MEGASTRUCTURE("megastructure", "Megastructure",
             "A colossal ring structure arching past a gas giant."),
     THE_WATCHER("the_watcher", "The Watcher",
@@ -129,6 +130,15 @@ public enum SkyType {
             names[i] = all[i].displayName;
         }
         return names;
+    }
+
+    /** The sky with this id, or null if there isn't one. */
+    public static SkyType byId(String id) {
+        if (id == null) return null;
+        for (SkyType t : values()) {
+            if (t.id.equals(id.trim())) return t;
+        }
+        return null;
     }
 
     public static SkyType byIndex(int index) {

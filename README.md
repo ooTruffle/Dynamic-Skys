@@ -51,8 +51,8 @@ and set its file name.
 1. Add `src/main/resources/assets/dynamicskies/shaders/skies/<id>.fsh` defining `vec3 sky(vec3 d)`.
    Helpers and audio uniforms (`uBass`, `uMid`, `uHigh`, `uLevel`, `uBeat`, `spectrum(x)`) are in
    `common.glsl`.
-2. Add it to the end of `SkyType` (the one list of skies; the settings dropdown and the browser
-   are filled from it). Never reorder existing entries: the saved setting is the position.
+2. Add it to `SkyType` (the one list of skies; the settings dropdown and the browser are filled
+   from it). The chosen sky is saved by its id, so never rename an existing id.
 
 ## Build
 ```
