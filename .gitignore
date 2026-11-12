@@ -2,6 +2,6 @@
 /build/
 /run/
 /.idea/
-/fabric-1.21.1/build/
-/fabric-1.21.1/.gradle/
-/fabric-1.21.1/run/
+/fabric-*/build/
+/fabric-*/.gradle/
+/fabric-*/run/

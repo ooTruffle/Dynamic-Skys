@@ -42,6 +42,10 @@ public final class SkyShader {
         return compile(type.id, read("skies/" + type.id + ".fsh"), true);
     }
 
+    public static SkyShader compileCore(String name, String source) {
+        return compile(name, source, true);
+    }
+
     private static SkyShader compile(String name, String skySource, boolean coreProfile) {
         String vertexPath = coreProfile ? "sky_core.vsh" : "sky.vsh";
         String vertex = read(vertexPath);

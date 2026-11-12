@@ -27,4 +27,7 @@ plugins {
 }
 
 rootProject.name = "dynamicskies"
-include("fabric-1.21.1")
+for (target in listOf("fabric-1.21.1", "fabric-1.21.4")) {
+    include(target)
+    project(":$target").buildFileName = "../fabric-common/build.gradle.kts"
+}
