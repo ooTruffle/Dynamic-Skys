@@ -254,6 +254,14 @@ public final class ModernClient implements ClientModInitializer {
         @Switch(title = "Replace End Sky", category = "Sky", subcategory = "World")
         public boolean replaceEnd = false;
 
+        @Switch(title = "Hide Sun and Moon", description = "Hide the vanilla sun and moon while Dynamic Skies is enabled.",
+                category = "Sky", subcategory = "World")
+        public boolean hideSunMoon = false;
+
+        public boolean shouldHideSunMoon() {
+            return enabled && hideSunMoon;
+        }
+
         @Switch(title = "Hide Clouds", category = "Sky", subcategory = "World")
         public boolean hideClouds = true;
 
