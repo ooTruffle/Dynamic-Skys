@@ -1,4 +1,6 @@
-package com.ootruffle.dynamicskies.modern;
+package com.ootruffle.dynamicskies.modern.mixin;
+
+import com.ootruffle.dynamicskies.modern.ModernClient;
 
 import com.ootruffle.dynamicskies.sky.SkyShader;
 import com.ootruffle.dynamicskies.sky.SkyType;
