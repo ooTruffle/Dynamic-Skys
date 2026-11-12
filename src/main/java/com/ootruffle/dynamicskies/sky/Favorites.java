@@ -1,7 +1,7 @@
 package com.ootruffle.dynamicskies.sky;
 
 import com.ootruffle.dynamicskies.Log;
-import com.ootruffle.dynamicskies.config.DynamicSkiesConfig;
+import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -20,7 +20,7 @@ public final class Favorites {
     }
 
     private static File file() {
-        return new File(DynamicSkiesConfig.imageFolder(), "favorites.txt");
+        return FabricLoader.getInstance().getConfigDir().resolve("dynamicskies/favorites.txt").toFile();
     }
 
     private static Set<SkyType> load() {
@@ -51,7 +51,9 @@ public final class Favorites {
         List<String> lines = new ArrayList<>();
         for (SkyType t : set) lines.add(t.id);
         try {
-            Files.write(file().toPath(), lines, StandardCharsets.UTF_8);
+            var target = file().toPath();
+            Files.createDirectories(target.getParent());
+            Files.write(target, lines, StandardCharsets.UTF_8);
         } catch (Exception e) {
             Log.warn("Couldn't save favorites: " + e.getMessage());
         }

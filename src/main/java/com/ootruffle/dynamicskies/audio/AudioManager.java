@@ -1,7 +1,8 @@
 package com.ootruffle.dynamicskies.audio;
 
 import com.ootruffle.dynamicskies.Log;
-import com.ootruffle.dynamicskies.config.DynamicSkiesConfig;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import javax.sound.sampled.Mixer;
 import java.util.ArrayList;
@@ -36,6 +37,22 @@ public final class AudioManager {
     private static double fakePhase;
     private static final float[] spectrum = new float[BANDS];
 
+    public record Options(int audioSource, String audioDevice, float sensitivity, float smoothing,
+                          float fakeBpm, boolean dropDetection, float dropSensitivity) {}
+
+    private static Supplier<Options> options;
+    private static Consumer<String> reportError;
+
+    public static void configure(Supplier<Options> source, Consumer<String> errors) {
+        options = source;
+        reportError = errors;
+    }
+
+    public static void stop() {
+        if (analyzer != null) analyzer.stop();
+        analyzer = null;
+    }
+
     private AudioManager() {
     }
 
@@ -63,8 +80,8 @@ public final class AudioManager {
     }
 
     public static void update(float dt) {
-        DynamicSkiesConfig cfg = DynamicSkiesConfig.INSTANCE;
-        int source = cfg.enabled ? cfg.audioSource : SOURCE_OFF;
+        Options cfg = options.get();
+        int source = cfg.audioSource;
 
         // Start, stop or switch the capture thread to match the settings.
         boolean system = source == SOURCE_SYSTEM;
@@ -97,8 +114,7 @@ public final class AudioManager {
                     && System.nanoTime() - startedAt > 2_000_000_000L) {
                 reportedError = analyzer.error;
                 Log.warn("Audio: " + reportedError);
-                DynamicSkiesConfig.chat("§cAudio: " + reportedError);
-                DynamicSkiesConfig.guideLink();
+                reportError.accept(reportedError);
             }
             tBass = Math.min(1f, analyzer.bass * sens);
             tMid = Math.min(1f, analyzer.mid * sens);
@@ -180,7 +196,7 @@ public final class AudioManager {
 
     public static List<String> describeDevices() {
         List<String> lines = new ArrayList<>();
-        if (DynamicSkiesConfig.INSTANCE.audioSource == SOURCE_SYSTEM) {
+        if (options.get().audioSource == SOURCE_SYSTEM) {
             lines.add(analyzer != null
                     ? "Listening to: " + analyzer.deviceName + (analyzer.error != null ? " (" + analyzer.error + ")" : "")
                     : "System audio isn't running.");
