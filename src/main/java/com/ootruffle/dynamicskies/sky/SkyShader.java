@@ -35,13 +35,22 @@ public final class SkyShader {
      * Error line numbers in "1:N" form point at line N of that source.
      */
     public static SkyShader compile(String name, String skySource) {
-        String vertex = read("sky.vsh");
-        String fragment = read("common.glsl")
+        return compile(name, skySource, false);
+    }
+
+    public static SkyShader compileCore(SkyType type) {
+        return compile(type.id, read("skies/" + type.id + ".fsh"), true);
+    }
+
+    private static SkyShader compile(String name, String skySource, boolean coreProfile) {
+        String vertexPath = coreProfile ? "sky_core.vsh" : "sky.vsh";
+        String vertex = read(vertexPath);
+        String fragment = (coreProfile ? "#version 150\n" : "#version 120\n") + read("common.glsl")
                 + "\n#line 1 1\n" + skySource
                 + "\n#line 1 2\n" + read("layers.glsl")
                 + "\n#line 1 3\n" + read("main.fsh");
 
-        int vs = compileStage(GL20.GL_VERTEX_SHADER, vertex, "sky.vsh");
+        int vs = compileStage(GL20.GL_VERTEX_SHADER, vertex, vertexPath);
         int fs;
         try {
             fs = compileStage(GL20.GL_FRAGMENT_SHADER, fragment, name);
@@ -101,7 +110,7 @@ public final class SkyShader {
         GL20.glDeleteProgram(program);
     }
 
-    private int loc(String name) {
+    public int loc(String name) {
         Integer l = uniforms.get(name);
         if (l == null) {
             l = GL20.glGetUniformLocation(program, name);

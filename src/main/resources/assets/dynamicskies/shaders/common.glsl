@@ -1,4 +1,3 @@
-#version 120
 
 // Shared by every sky. Each sky file defines: vec3 sky(vec3 d)
 // where d is the normalized world-space view direction (y = up).
@@ -14,7 +13,14 @@ uniform vec3 uSkyColor;   // vanilla sky color this frame
 uniform sampler2D uTex;   // 64x1 audio spectrum, or the custom image
 uniform float uImageRot;
 
+#if __VERSION__ >= 150
+in vec3 vDir;
+out vec4 skyFragment;
+#define texture2D texture
+#else
 varying vec3 vDir;
+#define skyFragment gl_FragColor
+#endif
 
 #define PI 3.14159265
 #define TAU 6.28318531

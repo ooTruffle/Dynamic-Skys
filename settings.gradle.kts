@@ -27,3 +27,4 @@ plugins {
 }
 
 rootProject.name = "dynamicskies"
+include("fabric-1.21.1")

@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "com.ootruffle.dynamicskies.modern",
+  "compatibilityLevel": "JAVA_21",
+  "client": ["SkyMixin"],
+  "injectors": {"defaultRequire": 1}
+}

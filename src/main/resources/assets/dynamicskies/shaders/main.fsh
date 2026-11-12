@@ -60,7 +60,7 @@ void main() {
         // overlay fades out into the fog instead of painting the fog color.
         c = max(c - vec3(uOverlayCutoff), vec3(0.0)) / (1.0 - uOverlayCutoff);
         c *= 1.0 - fog;
-        gl_FragColor = vec4(clamp(c, 0.0, 1.0) * uAlpha, 1.0);
+        skyFragment = vec4(clamp(c, 0.0, 1.0) * uAlpha, 1.0);
         return;
     }
 
@@ -68,5 +68,5 @@ void main() {
 
     // A little dithering to hide gradient banding.
     c += (hash12(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) / 255.0;
-    gl_FragColor = vec4(c, uAlpha);
+    skyFragment = vec4(c, uAlpha);
 }
