@@ -78,7 +78,21 @@ public enum SkyType {
     ACRYLIC_POUR("acrylic_pour", "Acrylic Pour",
             "Slow fluid-art swirls of paint with white lacing."),
     ANIME_SKY("anime_sky", "Anime Sky",
-            "A vivid summer sky with big crisp cumulus clouds.");
+            "A vivid summer sky with big crisp cumulus clouds."),
+    FIREWORKS("fireworks", "Fireworks",
+            "A firework launches on every beat; the bass sets the burst size."),
+    HYPERSPACE("hyperspace", "Hyperspace",
+            "Star streaks rushing past as you fly into a point on the horizon."),
+    OSCILLOSCOPE("oscilloscope", "Oscilloscope",
+            "Green phosphor waveforms drawn from your music on an old lab screen."),
+    NEON_CITY("neon_city", "Neon City",
+            "Rain over a glowing city skyline, its lights reflected in wet streets."),
+    PIXEL_SUNSET("pixel_sunset", "Pixel Sunset",
+            "A blocky, dithered sunset over the sea in a small retro palette."),
+    THE_END("the_end", "The End",
+            "A purple void with drifting end rods, and the dragon passing now and then."),
+    NETHER_SKY("nether_sky", "Nether Sky",
+            "A red smoke ceiling over a glowing lava sea, with ash and embers.");
 
     public final String id;
     public final String displayName;
@@ -117,6 +131,9 @@ public enum SkyType {
             case NONE:
             case MEGASTRUCTURE:
             case NEON_LOTUS:
+            case FIREWORKS:
+            case HYPERSPACE:
+            case OSCILLOSCOPE:
                 return true;
             default:
                 return false;

@@ -2,6 +2,5 @@
 /build/
 /run/
 /.idea/
-/fabric-*/build/
-/fabric-*/.gradle/
-/fabric-*/run/
+*.iml
+/versions/

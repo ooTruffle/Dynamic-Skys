@@ -1,7 +1,0 @@
-{
-  "required": true,
-  "package": "com.ootruffle.dynamicskies.modern.mixin",
-  "compatibilityLevel": "JAVA_21",
-  "client": ["SkyMixin", "SunMoonMixin", "AudioLifecycleMixin"],
-  "injectors": {"defaultRequire": 1}
-}

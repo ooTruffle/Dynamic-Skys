@@ -1,63 +1,105 @@
+import net.ornithemc.ploceus.api.PloceusGradleExtensionApi
+
 plugins {
-    // Same Ornithe Loom + Ploceus setup as the other OneConfig 1.8.9 mods in D:\Mods.
-    id("net.fabricmc.fabric-loom-remap") version "1.17-SNAPSHOT"
-    id("ploceus") version "1.17-SNAPSHOT"
-    id("dev.deftu.gradle.bloom") version "0.2.0"
+    id("dev.kikugie.loom-back-compat")
+    id("net.fabricmc.fabric-loom-remap") version "1.17-SNAPSHOT" apply false
+    id("ploceus") version "1.17-SNAPSHOT" apply false
 }
 
-ploceus {
-    setIntermediaryGeneration(2)
+// 1.8.9 runs on Ornithe with MCP names and keeps its own code in src/legacy; every other
+// version is Fabric with Mojang names, sharing src/main's `modern` package.
+val isLegacy = sc.current.version == "1.8.9"
+val ploceus = if (isLegacy) {
+    pluginManager.apply("net.fabricmc.fabric-loom-remap")
+    pluginManager.apply("ploceus")
+
+    extensions.getByType<PloceusGradleExtensionApi>().apply {
+        setIntermediaryGeneration(2)
+    }
+} else {
+    null
 }
 
-val modId = "dynamicskies"
-val modName = "Dynamic Skies"
-val modVersion = "1.2.1"
-val mcVersion = "1.8.9"
-val loaderVersion = "0.19.5"
-val oslVersion = "0.21.0"
-val oneconfigVersion = "1.2.0"
-val javaVersion = 25
+val modId: String = sc.properties["mod.id"]
+val modName: String = sc.properties["mod.name"]
+val modVersion: String = sc.properties["mod.version"]
+val baseGroup: String = sc.properties["mod.group"]
+val mcVersion: String = sc.current.version
+val mcCompat: String = sc.properties["mod.mc_compat"]
+val loaderVersion: String = sc.properties["deps.fabric_loader"]
+val oneconfigVersion: String = sc.properties["deps.oneconfig"]
 
+val requiredJava: JavaVersion = when {
+    isLegacy -> JavaVersion.VERSION_25
+    sc.current.parsed >= "26.1" -> JavaVersion.VERSION_25
+    else -> JavaVersion.VERSION_21
+}
+
+group = baseGroup
 version = "$modVersion+$mcVersion"
-group = "com.ootruffle"
-base.archivesName.set(modId)
+base.archivesName = modId
 
 repositories {
     mavenCentral()
     google()
-
-    // Hosts the Compose/androidx tree OneConfig's "-ornithe" artifact pulls in.
-    maven("https://maven.cloverclient.com/releases")
-    maven("https://repo.papermc.io/repository/maven-public/")
-
-    maven("https://maven.fabricmc.net/")
     maven("https://repo.polyfrost.org/releases")
     maven("https://repo.polyfrost.org/snapshots")
+    // OneConfig's Compose/androidx dependency tree (lenis, etc.) lives here.
+    maven("https://maven.cloverclient.com/releases")
+    maven("https://repo.papermc.io/repository/maven-public/")
+    exclusiveContent {
+        forRepository { maven("https://maven.fabricmc.net/") }
+        filter { includeGroup("net.fabricmc") }
+    }
+}
+
+sourceSets.main {
+    val platform = if (isLegacy) "legacy" else "modern"
+    java.srcDir(rootProject.file("src/$platform/java"))
+    resources.srcDir(rootProject.file("src/$platform/resources"))
+    if (isLegacy) {
+        java.exclude("com/ootruffle/dynamicskies/modern/**", "com/ootruffle/dynamicskies/sky/ModernSkyRenderer.java")
+    }
 }
 
 dependencies {
     minecraft("com.mojang:minecraft:$mcVersion")
-    mappings(ploceus.mcpMappings("stable", "1.8.9", "22"))
+    if (isLegacy) {
+        mappings(ploceus!!.mcpMappings("stable", mcVersion, sc.properties["deps.mcp_mappings"]))
+        ploceus.dependOsl(sc.properties["deps.osl"])
+    } else {
+        loomx.applyMojangMappings()
+    }
 
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
-    ploceus.dependOsl(oslVersion)
 
-    modImplementation("org.polyfrost.oneconfig:$mcVersion-ornithe:$oneconfigVersion")
-    for (module in arrayOf("commands", "config", "config-impl", "events", "internal", "ui", "utils")) {
-        implementation("org.polyfrost.oneconfig:$module:$oneconfigVersion")
+    if (isLegacy) {
+        modImplementation("org.polyfrost.oneconfig:$mcVersion-ornithe:$oneconfigVersion")
+        for (module in arrayOf("commands", "config", "config-impl", "events", "internal", "ui", "utils")) {
+            implementation("org.polyfrost.oneconfig:$module:$oneconfigVersion")
+        }
+    } else {
+        // OneConfig is a required mod at runtime; compile against it without pulling its whole tree.
+        modCompileOnly("org.polyfrost.oneconfig:$mcVersion-fabric:$oneconfigVersion") { isTransitive = false }
+        for (module in arrayOf("config", "config-impl", "poly-compose")) {
+            compileOnly("org.polyfrost.oneconfig:$module:$oneconfigVersion") { isTransitive = false }
+        }
+        modCompileOnly(fabricApi.module("fabric-command-api-v2", sc.properties["deps.fabric_api"]))
     }
 }
 
-// OneConfig's 1.8.9-ornithe build runs the game on LWJGL 3 through its "lenis"
-// layer. Vanilla's LWJGL 2 jars on the dev run classpath clash with it
-// (VerifyError in lenis' DisplaySdl), so keep them for compiling only.
-configurations.runtimeClasspath {
-    exclude(group = "org.lwjgl.lwjgl", module = "lwjgl")
-    exclude(group = "org.lwjgl.lwjgl", module = "lwjgl_util")
+if (isLegacy) {
+    // OneConfig's 1.8.9-ornithe build runs the game on LWJGL 3 through its "lenis"
+    // layer. Vanilla's LWJGL 2 jars on the dev run classpath clash with it
+    // (VerifyError in lenis' DisplaySdl), so keep them for compiling only.
+    configurations.runtimeClasspath {
+        exclude(group = "org.lwjgl.lwjgl", module = "lwjgl")
+        exclude(group = "org.lwjgl.lwjgl", module = "lwjgl_util")
+    }
 }
 
 loom {
-    fabricModJsonPath = rootProject.file("src/main/resources/fabric.mod.json")
+    fabricModJsonPath = rootProject.file("src/${if (isLegacy) "legacy" else "modern"}/resources/fabric.mod.json")
 
     runConfigs.all {
         runDirectory = rootProject.file("run")
@@ -65,52 +107,46 @@ loom {
     runConfigs.remove(runConfigs["server"])
 }
 
+tasks {
+    processResources {
+        val props = mapOf(
+            "mod_id" to modId,
+            "mod_name" to modName,
+            "mod_version" to modVersion,
+            "version" to version.toString(),
+            "minecraft" to mcCompat,
+            "loader_version" to loaderVersion,
+            "osl_version" to (sc.properties.getOrNull<String>("deps.osl") ?: ""),
+            "oneconfig_version" to oneconfigVersion,
+            "java_version" to requiredJava.majorVersion
+        )
+
+        inputs.properties(props)
+
+        filesMatching(listOf("fabric.mod.json", "mixins.$modId.json", "$modId-modern.mixins.json")) {
+            expand(props)
+        }
+    }
+
+    withType<JavaCompile>().configureEach {
+        options.release = requiredJava.majorVersion.toInt()
+    }
+
+    register<Copy>("buildAndCollect") {
+        group = "build"
+        description = "Builds the mod jar and copies it to the root build/libs/<mod version>/."
+
+        from(loomx.modJar.flatMap { it.archiveFile })
+        into(rootProject.layout.buildDirectory.dir("libs/$modVersion"))
+    }
+}
+
 java {
     withSourcesJar()
-    sourceCompatibility = JavaVersion.toVersion(javaVersion)
-    targetCompatibility = JavaVersion.toVersion(javaVersion)
+    sourceCompatibility = requiredJava
+    targetCompatibility = requiredJava
 
     toolchain {
-        vendor = JvmVendorSpec.ADOPTIUM
-        languageVersion.set(JavaLanguageVersion.of(javaVersion))
-    }
-}
-
-tasks.withType<JavaCompile>().configureEach {
-    options.release.set(javaVersion)
-}
-
-bloom {
-    replacement("@MOD_ID@", modId)
-    replacement("@MOD_NAME@", modName)
-    replacement("@MOD_VERSION@", modVersion)
-}
-
-// Keep only this version's jars in build/libs, so an older build can't be loaded by mistake.
-tasks.named("assemble") {
-    doLast {
-        val current = "$modId-$version"
-        layout.buildDirectory.dir("libs").get().asFile.listFiles()
-            ?.filter { it.name.startsWith("$modId-") && it.name.endsWith(".jar") && !it.name.startsWith(current) }
-            ?.forEach {
-                it.delete()
-                logger.lifecycle("Removed old build ${it.name}")
-            }
-    }
-}
-
-tasks.processResources {
-    val props = mapOf(
-        "mod_id" to modId,
-        "mod_name" to modName,
-        "mod_version" to modVersion,
-        "loader_version" to loaderVersion,
-        "osl_version" to oslVersion,
-        "oneconfig_version" to oneconfigVersion,
-        "java_version" to javaVersion.toString()
-    )
-    inputs.properties(props)
-    filesMatching(listOf("fabric.mod.json", "mixins.$modId.json")) {
-        expand(props)
+        languageVersion = JavaLanguageVersion.of(requiredJava.majorVersion)
     }
 }

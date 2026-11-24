@@ -114,6 +114,52 @@ public final class SkyShader {
         GL20.glDeleteProgram(program);
     }
 
+    /** The uniforms set every frame, looked up once instead of by name each frame. */
+    public enum U {
+        INVERSE_VIEW_PROJECTION("uInverseViewProjection"), TEX("uTex"), TIME("uTime"),
+        BASS("uBass"), MID("uMid"), HIGH("uHigh"), LEVEL("uLevel"), BEAT("uBeat"),
+        SUN_DIR("uSunDir"), SKY_COLOR("uSkyColor"), FOG_COLOR("uFogColor"), FOG("uFog"),
+        TINT("uTint"), BRIGHTNESS("uBrightness"), SATURATION("uSaturation"), HUE("uHue"),
+        AUDIO_HUE("uAudioHue"), BEAT_FLASH("uBeatFlash"), IMAGE_ROT("uImageRot"), ALPHA("uAlpha"),
+        OVERLAY("uOverlay"), OVERLAY_CUTOFF("uOverlayCutoff"), BUILD("uBuild"), DROP_AGE("uDropAge"),
+        SKY_DEPTH("uSkyDepth"), DROP_FLASH("uDropFlash"), DROP_WAVE("uDropWave"), LAYER_STARS("uLayerStars"),
+        LAYER_AURORA("uLayerAurora"), LAYER_WISPS("uLayerWisps"),
+        // Arrays: the location of element 0; the whole array is uploaded in one call.
+        METEORS("uMeteors"), METEOR_DIRS("uMeteorDirs"), SHELLS("uShells"), SHELL_INFO("uShellInfo");
+
+        final String glsl;
+
+        U(String glsl) {
+            this.glsl = glsl;
+        }
+    }
+
+    private int[] cached;
+
+    public int loc(U u) {
+        if (cached == null) {
+            U[] all = U.values();
+            cached = new int[all.length];
+            for (U v : all) cached[v.ordinal()] = GL20.glGetUniformLocation(program, v.glsl);
+        }
+        return cached[u.ordinal()];
+    }
+
+    public void set(U u, float v) {
+        int l = loc(u);
+        if (l >= 0) GL20.glUniform1f(l, v);
+    }
+
+    public void set(U u, float x, float y, float z) {
+        int l = loc(u);
+        if (l >= 0) GL20.glUniform3f(l, x, y, z);
+    }
+
+    public void setInt(U u, int v) {
+        int l = loc(u);
+        if (l >= 0) GL20.glUniform1i(l, v);
+    }
+
     public int loc(String name) {
         Integer l = uniforms.get(name);
         if (l == null) {

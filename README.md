@@ -17,7 +17,7 @@ This is HEVALY vibecoded mod , feel free to pr to clean up the code^^
 ## Usage
 Run `/dynamicskies` (or open OneConfig → Visuals → Dynamic Skies).
 
-**Sky:** pick one of 34 animated skies from the Sky dropdown, or run `/dynamicskies browse` for a
+**Sky:** pick one of 41 animated skies from the Sky dropdown, or run `/dynamicskies browse` for a
 browser with live previews of every sky, a big preview of the one you hover, and favorites. Settings include crossfade time, cycling, Night Only,
 Match Fog, Opacity, sun and moon, rain fade, and End sky replacement.
 
@@ -55,7 +55,21 @@ and set its file name.
    from it). The chosen sky is saved by its id, so never rename an existing id.
 
 ## Build
+The project uses [Stonecutter](https://stonecutter.kikugie.dev/) to build every Minecraft version from
+one source tree: 1.8.9 on Ornithe, and 1.21.1, 1.21.4, 1.21.5, 1.21.8 (1.21.7–1.21.8), 1.21.10
+(1.21.9–1.21.10), 1.21.11, 26.1, 26.2 and 26.3 on Fabric. The skies are drawn with OpenGL, so on 26.2 and
+later they need the game's Graphics API set to OpenGL (the default); on Vulkan the mod stays off and says so in chat.
 ```
-./gradlew build
+./gradlew buildAll
 ```
-The jar is written to `build/libs/dynamicskies-1.2.1+1.8.9.jar`.
+The jars are written to `build/libs/1.2.1/`, one per version (`dynamicskies-1.2.1+<version>.jar`).
+To build only some versions, pass `-Pdynamicskies.versions=1.8.9,1.21.5`.
+
+- `src/main` - code shared by every version, plus the modern (Fabric) code in the `modern` package.
+  Version differences are marked with Stonecutter's `//? if >= 1.21.5 {` comments.
+- `src/legacy` - 1.8.9-only code and resources.
+- `src/modern` - resources and code used by every Fabric version.
+
+The sources are checked in for 1.21.5. To edit them for another version, run
+`./gradlew "Set active project to 1.21.4"`, and switch back with `./gradlew "Reset active project"`
+before committing.
