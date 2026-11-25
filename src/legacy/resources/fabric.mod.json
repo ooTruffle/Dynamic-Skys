@@ -22,5 +22,15 @@
         "minecraft": "1.8.9",
         "osl": ">=${osl_version}",
         "oneconfig": ">=${oneconfig_version}"
+    },
+    "contact": {
+        "homepage": "https://github.com/ooTruffle/Dynamic-Skys",
+        "sources": "https://github.com/ooTruffle/Dynamic-Skys",
+        "issues": "https://github.com/ooTruffle/Dynamic-Skys/issues"
+    },
+    "custom": {
+        "modupdatechecker": {
+            "github": "ooTruffle/Dynamic-Skys"
+        }
     }
 }

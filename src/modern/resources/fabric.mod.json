@@ -4,7 +4,28 @@
   "version": "${version}",
   "name": "Dynamic Skies",
   "environment": "client",
-  "entrypoints": {"client": ["com.ootruffle.dynamicskies.modern.ModernClient"]},
-  "mixins": ["dynamicskies-modern.mixins.json"],
-  "depends": {"fabricloader": ">=0.19.5", "minecraft": "${minecraft}", "java": ">=${java_version}", "oneconfig": ">=1.2.22"}
+  "entrypoints": {
+    "client": [
+      "com.ootruffle.dynamicskies.modern.ModernClient"
+    ]
+  },
+  "mixins": [
+    "dynamicskies-modern.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "${minecraft}",
+    "java": ">=${java_version}",
+    "oneconfig": ">=1.2.22"
+  },
+  "contact": {
+    "homepage": "https://github.com/ooTruffle/Dynamic-Skys",
+    "sources": "https://github.com/ooTruffle/Dynamic-Skys",
+    "issues": "https://github.com/ooTruffle/Dynamic-Skys/issues"
+  },
+  "custom": {
+    "modupdatechecker": {
+      "github": "ooTruffle/Dynamic-Skys"
+    }
+  }
 }
