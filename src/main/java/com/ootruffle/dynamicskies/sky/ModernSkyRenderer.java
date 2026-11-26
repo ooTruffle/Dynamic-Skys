@@ -200,6 +200,15 @@ public final class ModernSkyRenderer {
         this.fogG = fogG;
         this.fogB = fogB;
         inverse.set(projection).mul(scratchView.set(view).setTranslation(0, 0, 0)).invert();
+        if (REVERSED_DEPTH) {
+            // The vertex shader unprojects clip depths -1 and +1 and takes the difference as the
+            // view ray. With 26.3's reversed depth (and no far plane) -1 lands behind the camera,
+            // which bends every ray toward the horizon. Remap them to the near plane (+1) and a
+            // point halfway to the far plane, both always in front: z' = 1 + a * (z + 1).
+            float mid = (1f + skyClipZ()) * 0.5f;
+            float a = (mid - 1f) * 0.5f;
+            inverse.mul(scratchProjection.identity().m22(a).m32(1f + a));
+        }
 
         SkyType sky = selectSky();
         SkyShader shader = shader(sky);
@@ -219,6 +228,8 @@ public final class ModernSkyRenderer {
         }
 
         boolean overlay = settings.skyMode == 1 || (settings.skyMode == 2 && sky.overlayFriendly());
+        lastSkyAlpha = alpha;
+        lastSkyOverlay = overlay;
         GlState state = glState.save(false);
         try {
             int drawFbo = state.drawFbo, readFbo = state.readFbo;
@@ -454,6 +465,186 @@ public final class ModernSkyRenderer {
         return PREVIEW_OK;
     }
 
+    // ---- Sky Lighting ---------------------------------------------------------
+
+    /*
+     * The world picks up the sky's colour. A few times a second the current sky is drawn into
+     * a tiny framebuffer (two views up into the sky, facing opposite ways) and its average
+     * colour is read back through a pixel buffer one sample later, so the read never waits on
+     * the GPU. The lightmap hook (LightmapMixin) then tints vanilla's sky light colour with it.
+     */
+    private static final int AMBIENT_W = 16, AMBIENT_H = 8;
+    private static final long AMBIENT_INTERVAL_NANOS = 100_000_000L;
+    private int ambientFbo, ambientTexture, ambientPbo;
+    private boolean ambientPboFilled;
+    private final java.nio.ByteBuffer ambientPixels = MemoryUtil.memAlloc(AMBIENT_W * AMBIENT_H * 4);
+    private long lastAmbientNanos, lastLightNanos;
+    private float lastSkyAlpha;
+    private boolean lastSkyOverlay;
+    private float sampleR = 1f, sampleG = 1f, sampleB = 1f;
+    private boolean sampled;
+    private float lightR = 1f, lightG = 1f, lightB = 1f, lightAmount;
+    private final float[] skyLightTint = {1f, 1f, 1f};
+
+    /**
+     * Called once per lightmap update. Samples the sky now and then and eases the light toward
+     * it. Returns how strongly the sky tints the world (0 = not at all); the colour to multiply
+     * the sky light by, brightness included, is then in {@link #skyLightTint()}.
+     */
+    public float updateSkyLight() {
+        var settings = ModernClient.SETTINGS;
+        long now = System.nanoTime();
+        float dt = lastLightNanos == 0 ? 0f : Math.min(0.5f, (now - lastLightNanos) / 1e9f);
+        lastLightNanos = now;
+
+        // The world sky set lastSkyAlpha this frame or the last few; otherwise it isn't showing.
+        boolean showing = settings.skyLighting && now - lastSkyDrawnNanos < 250_000_000L;
+        float alpha = showing ? lastSkyAlpha : 0f;
+        if (alpha > 0.001f) sampleAmbient(now);
+
+        float r = skyR, g = skyG, b = skyB;
+        float amount = 0f;
+        if (alpha > 0.001f && sampled) {
+            if (lastSkyOverlay) {
+                r = Math.min(1f, r + sampleR * alpha);
+                g = Math.min(1f, g + sampleG * alpha);
+                b = Math.min(1f, b + sampleB * alpha);
+            } else {
+                r += (sampleR - r) * alpha;
+                g += (sampleG - g) * alpha;
+                b += (sampleB - b) * alpha;
+            }
+            amount = settings.skyLightingStrength;
+        }
+        float ease = 1f - (float) Math.exp(-dt * 3f);
+        lightR += (r - lightR) * ease;
+        lightG += (g - lightG) * ease;
+        lightB += (b - lightB) * ease;
+        lightAmount += (amount - lightAmount) * ease;
+        if (lightAmount < 0.002f) return 0f;
+
+        // Hue from the sky's colour (normalised to its brightness), plus a gentle brightness
+        // shift: dark skies dim the world a little, bright ones lift it, within limits.
+        float lum = 0.2126f * lightR + 0.7152f * lightG + 0.0722f * lightB;
+        float inv = 1f / Math.max(lum, 0.04f);
+        float bright = Math.max(0.65f, Math.min(1.35f, 0.65f + lum * 1.1f));
+        skyLightTint[0] = Math.min(2.5f, lightR * inv) * bright;
+        skyLightTint[1] = Math.min(2.5f, lightG * inv) * bright;
+        skyLightTint[2] = Math.min(2.5f, lightB * inv) * bright;
+        return lightAmount;
+    }
+
+    /** The colour to multiply sky light by, valid after {@link #updateSkyLight()} returned more than 0. */
+    public float[] skyLightTint() {
+        return skyLightTint;
+    }
+
+    /**
+     * The lightmap hook's entry point: vanilla's sky light colour in, the colour to use out.
+     * Returns the same object untouched while Sky Lighting is off or fading out completely.
+     */
+    public org.joml.Vector3fc tintSkyLight(org.joml.Vector3fc color) {
+        float amount = updateSkyLight();
+        if (amount <= 0f) return color;
+        float[] t = skyLightTint;
+        return new org.joml.Vector3f(
+                color.x() * (1f + (t[0] - 1f) * amount),
+                color.y() * (1f + (t[1] - 1f) * amount),
+                color.z() * (1f + (t[2] - 1f) * amount));
+    }
+
+    private void sampleAmbient(long now) {
+        if (now - lastAmbientNanos < AMBIENT_INTERVAL_NANOS || !openGl()) return;
+        lastAmbientNanos = now;
+        SkyType type = current != null ? current : SkyType.byIndex(ModernClient.SETTINGS.sky);
+        SkyShader shader = shader(type);
+        if (shader == null || (type.usesImage() && image() == 0)) return;
+
+        GlState state = glState.save(true);
+        previewing = true;
+        try {
+            if (!ensureAmbientTarget()) return;
+            // Last sample's pixels: the GPU finished them long ago, so this doesn't wait.
+            if (ambientPboFilled) readAmbient();
+
+            bindFramebuffer(ambientFbo);
+            prepareState();
+            GL11.glDisable(GL11.GL_BLEND);
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            // No clear: the sky covers every pixel of both views. Clearing would also change the
+            // clear colour, which the game caches and relies on for its own sky and fog.
+            var camera = Minecraft.getInstance().getCameraEntity();
+            float yaw = camera != null ? camera.getYRot() : 0f;
+            int half = AMBIENT_W / 2;
+            for (int i = 0; i < 2; i++) {
+                scratchProjection.setPerspective((float) Math.toRadians(110f), half / (float) AMBIENT_H, 0.05f, 100f);
+                scratchView.rotationX((float) Math.toRadians(-55f)).rotateY((float) Math.toRadians(yaw + 180f * i + 180f));
+                inverse.set(scratchProjection).mul(scratchView).invert();
+                GL11.glViewport(half * i, 0, half, AMBIENT_H);
+                drawPass(shader, type, time, 1f, false);
+            }
+
+            GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, ambientPbo);
+            GL11.glReadPixels(0, 0, AMBIENT_W, AMBIENT_H, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, 0L);
+            GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0);
+            ambientPboFilled = true;
+        } finally {
+            previewing = false;
+            state.restore();
+        }
+    }
+
+    private boolean ensureAmbientTarget() {
+        if (ambientFbo != 0) return true;
+        ambientTexture = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, ambientTexture);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        withPlainUnpack(() -> GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA8, AMBIENT_W, AMBIENT_H, 0,
+                GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, (java.nio.ByteBuffer) null));
+        ambientFbo = GL30.glGenFramebuffers();
+        bindFramebuffer(ambientFbo);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, ambientTexture, 0);
+        if (GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER) != GL30.GL_FRAMEBUFFER_COMPLETE) {
+            LOG.warn("Dynamic Skies: couldn't make the Sky Lighting framebuffer; Sky Lighting stays off.");
+            ModernClient.SETTINGS.skyLighting = false;
+            return false;
+        }
+        ambientPbo = GL15.glGenBuffers();
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, ambientPbo);
+        GL15.glBufferData(GL21.GL_PIXEL_PACK_BUFFER, (long) AMBIENT_W * AMBIENT_H * 4, GL15.GL_STREAM_READ);
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0);
+        return true;
+    }
+
+    /** From 1.21.5 GlStateManager caches the bound framebuffer, so binds go through it. */
+    private static void bindFramebuffer(int fbo) {
+        //? if >= 1.21.5 {
+        GlStateManager._glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
+        //?} else {
+        /*GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
+        *///?}
+    }
+
+    private void readAmbient() {
+        ambientPboFilled = false;
+        ambientPixels.clear();
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, ambientPbo);
+        GL15.glGetBufferSubData(GL21.GL_PIXEL_PACK_BUFFER, 0L, ambientPixels);
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0);
+        long r = 0, g = 0, b = 0;
+        int count = AMBIENT_W * AMBIENT_H;
+        for (int i = 0; i < count; i++) {
+            r += ambientPixels.get(i * 4) & 0xFF;
+            g += ambientPixels.get(i * 4 + 1) & 0xFF;
+            b += ambientPixels.get(i * 4 + 2) & 0xFF;
+        }
+        sampleR = r / (count * 255f);
+        sampleG = g / (count * 255f);
+        sampleB = b / (count * 255f);
+        sampled = true;
+    }
+
     // ---- Timing and events ----------------------------------------------------
 
     private float tickTime() {
@@ -545,6 +736,14 @@ public final class ModernSkyRenderer {
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glEnable(GL11.GL_BLEND);
+        // Everything else a draw depends on, set explicitly: whatever drew before us (the HUD
+        // last frame, another mod's UI) may have left a logic op, another blend equation, a
+        // stencil test or a partial colour mask on, which would leave the sky see-through.
+        GL14.glBlendEquation(GL14.GL_FUNC_ADD);
+        GL11.glDisable(GL11.GL_COLOR_LOGIC_OP);
+        GL11.glDisable(GL11.GL_STENCIL_TEST);
+        GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
+        GL11.glColorMask(true, true, true, true);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
         //? if >= 1.21.11 {
         /*// From 1.21.11 Minecraft binds sampler objects (the terrain's one is still on unit 0
@@ -1209,7 +1408,10 @@ public final class ModernSkyRenderer {
      * it; the world sky never touches it.
      */
     private static final class GlState {
-        boolean depthTest, blend, cull, scissor, depthWrite, withScissor;
+        boolean depthTest, blend, cull, scissor, depthWrite, withScissor, logicOp, stencil, polygonOffset;
+        int blendEqRgb, blendEqAlpha;
+        final boolean[] colorMask = new boolean[4];
+        final java.nio.ByteBuffer colorMaskBuffer = MemoryUtil.memAlloc(16);
         int depthFunc, srcRgb, dstRgb, srcAlpha, dstAlpha, program, vao, activeTexture, texture, sampler, drawFbo, readFbo;
         final int[] viewport = new int[4];
         final int[] scissorBox = new int[4];
@@ -1236,6 +1438,16 @@ public final class ModernSkyRenderer {
             dstRgb = GL11.glGetInteger(GL14.GL_BLEND_DST_RGB);
             srcAlpha = GL11.glGetInteger(GL14.GL_BLEND_SRC_ALPHA);
             dstAlpha = GL11.glGetInteger(GL14.GL_BLEND_DST_ALPHA);
+            // State the game's own pipelines set per draw and a raw draw would otherwise inherit
+            // from whatever drew last (a HUD's logic op, another blend equation, a colour mask).
+            blendEqRgb = GL11.glGetInteger(GL20.GL_BLEND_EQUATION_RGB);
+            blendEqAlpha = GL11.glGetInteger(GL20.GL_BLEND_EQUATION_ALPHA);
+            logicOp = GL11.glIsEnabled(GL11.GL_COLOR_LOGIC_OP);
+            stencil = GL11.glIsEnabled(GL11.GL_STENCIL_TEST);
+            polygonOffset = GL11.glIsEnabled(GL11.GL_POLYGON_OFFSET_FILL);
+            colorMaskBuffer.clear();
+            GL11.glGetBooleanv(GL11.GL_COLOR_WRITEMASK, colorMaskBuffer);
+            for (int i = 0; i < 4; i++) colorMask[i] = colorMaskBuffer.get(i) != 0;
             program = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
             vao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
             drawFbo = GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
@@ -1261,8 +1473,12 @@ public final class ModernSkyRenderer {
                 GL11.glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
             }
             GL14.glBlendFuncSeparate(srcRgb, dstRgb, srcAlpha, dstAlpha);
+            GL20.glBlendEquationSeparate(blendEqRgb, blendEqAlpha);
+            set(GL11.GL_COLOR_LOGIC_OP, logicOp);
+            set(GL11.GL_STENCIL_TEST, stencil);
+            set(GL11.GL_POLYGON_OFFSET_FILL, polygonOffset);
             GL11.glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-            GL11.glColorMask(true, true, true, true);
+            GL11.glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
             //? if >= 1.21.5 {
             // GlStateManager caches the bound framebuffers; go through it so the cache stays right.
             GlStateManager._glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, drawFbo);

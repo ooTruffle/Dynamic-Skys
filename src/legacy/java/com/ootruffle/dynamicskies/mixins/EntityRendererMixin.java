@@ -2,7 +2,9 @@ package com.ootruffle.dynamicskies.mixins;
 
 import com.ootruffle.dynamicskies.sky.SkyRenderer;
 import net.minecraft.client.renderer.EntityRenderer;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -45,5 +47,25 @@ public abstract class EntityRendererMixin {
     )
     private void dynamicskies$afterTerrain(int pass, float partialTicks, long finishTimeNano, CallbackInfo ci) {
         SkyRenderer.INSTANCE.renderAfterTerrain(partialTicks);
+    }
+
+    @Shadow
+    @Final
+    private int[] lightmapColors;
+
+    /**
+     * Sky Lighting: once the lightmap's colours are worked out and just before they're
+     * uploaded, tint the sky-lit ones toward the sky. Optional, like the terrain hook.
+     */
+    @Inject(
+            method = "updateLightmap(F)V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/texture/DynamicTexture;updateDynamicTexture()V"
+            ),
+            require = 0
+    )
+    private void dynamicskies$tintLightmap(float partialTicks, CallbackInfo ci) {
+        SkyRenderer.INSTANCE.tintLightmap(lightmapColors, partialTicks);
     }
 }

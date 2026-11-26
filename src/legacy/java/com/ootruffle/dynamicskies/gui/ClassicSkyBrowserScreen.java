@@ -18,11 +18,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Live previews of every sky. The grid on the left shows them all; the big
- * pane on the right shows the hovered one. Click a tile to use it, click its
- * star to favorite it, drag to look around, scroll for more.
+ * The vanilla-GUI sky browser, used when PolyCompose's UI is switched off
+ * (see {@link SkyBrowserScreen}). Live previews of every sky: the grid on the left
+ * shows them all, the big pane on the right shows the hovered one. Click a tile to
+ * use it, click its star to favorite it, drag to look around, scroll for more.
  */
-public class SkyBrowserScreen extends GuiScreen {
+public class ClassicSkyBrowserScreen extends GuiScreen {
 
     private static final int GAP = 6;
     private static final int TOP = 34;
@@ -56,8 +57,8 @@ public class SkyBrowserScreen extends GuiScreen {
     private GuiButton filterButton, useButton, favoriteButton;
 
     /** Opens the browser a moment later, so whatever screen is open now (OneConfig, chat) closes first. */
-    public static void open() {
-        ScreensKt.openScreen(new SkyBrowserScreen(), 2);
+    static void open() {
+        ScreensKt.openScreen(new ClassicSkyBrowserScreen(), 2);
     }
 
     @Override

@@ -154,6 +154,15 @@ public final class ModernClient implements ClientModInitializer {
         @Switch(title = "Replace End Sky", category = "Sky", subcategory = "World")
         public boolean replaceEnd = false;
 
+        @Switch(title = "Sky Lights the World",
+                description = "Tint outdoor lighting with the sky's colour, so a purple sky gives a purple glow. "
+                        + "Torch-lit areas keep their own colour. Doesn't work with shader packs.",
+                category = "Sky", subcategory = "Lighting")
+        public boolean skyLighting = false;
+
+        @Slider(title = "Lighting Strength", min = 0.05f, max = 1f, step = 0.05f, category = "Sky", subcategory = "Lighting")
+        public float skyLightingStrength = 0.6f;
+
         @Dropdown(
                 title = "Render Quality",
                 description = "Draws the sky at a lower resolution and smoothly scales it up. The soft skies look almost the same "
@@ -325,6 +334,7 @@ public final class ModernClient implements ClientModInitializer {
             hideIf("overlayBlend", () -> skyMode == 0);
             hideIf("overlayCutoff", () -> skyMode == 0);
             hideIf("fogStrength", () -> !matchFog);
+            hideIf("skyLightingStrength", () -> !skyLighting);
             hideIf("audioDevice", () -> audioSource != 1);
             hideIf("fakeBpm", () -> audioSource != 2);
             for (String opt : new String[]{"reactivity", "smoothing", "beatFlash", "bassSpeed", "audioHue"}) {

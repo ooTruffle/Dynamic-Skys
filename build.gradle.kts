@@ -2,8 +2,11 @@ import net.ornithemc.ploceus.api.PloceusGradleExtensionApi
 
 plugins {
     id("dev.kikugie.loom-back-compat")
-    id("net.fabricmc.fabric-loom-remap") version "1.17-SNAPSHOT" apply false
-    id("ploceus") version "1.17-SNAPSHOT" apply false
+    id("net.fabricmc.fabric-loom-remap") version "1.19-SNAPSHOT" apply false
+    id("ploceus") version "1.19-SNAPSHOT" apply false
+    // Only 1.8.9 uses Kotlin, for its PolyCompose sky browser. The version must match PolyCompose's.
+    kotlin("jvm") version "2.4.21" apply false
+    kotlin("plugin.compose") version "2.4.21" apply false
 }
 
 // 1.8.9 runs on Ornithe with MCP names and keeps its own code in src/legacy; every other
@@ -12,6 +15,8 @@ val isLegacy = sc.current.version == "1.8.9"
 val ploceus = if (isLegacy) {
     pluginManager.apply("net.fabricmc.fabric-loom-remap")
     pluginManager.apply("ploceus")
+    pluginManager.apply("org.jetbrains.kotlin.jvm")
+    pluginManager.apply("org.jetbrains.kotlin.plugin.compose")
 
     extensions.getByType<PloceusGradleExtensionApi>().apply {
         setIntermediaryGeneration(2)
@@ -47,6 +52,9 @@ repositories {
     // OneConfig's Compose/androidx dependency tree (lenis, etc.) lives here.
     maven("https://maven.cloverclient.com/releases")
     maven("https://repo.papermc.io/repository/maven-public/")
+    // PolyCompose (1.8.9): Compose pre-releases, and Pylon.
+    maven("https://redirector.kotlinlang.org/maven/compose-dev")
+    maven("https://maven.taumc.org/releases")
     exclusiveContent {
         forRepository { maven("https://maven.fabricmc.net/") }
         filter { includeGroup("net.fabricmc") }
@@ -58,6 +66,7 @@ sourceSets.main {
     java.srcDir(rootProject.file("src/$platform/java"))
     resources.srcDir(rootProject.file("src/$platform/resources"))
     if (isLegacy) {
+        extensions.getByName<SourceDirectorySet>("kotlin").srcDir(rootProject.file("src/legacy/kotlin"))
         java.exclude("com/ootruffle/dynamicskies/modern/**", "com/ootruffle/dynamicskies/sky/ModernSkyRenderer.java")
     }
 }
@@ -74,10 +83,10 @@ dependencies {
     modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
 
     if (isLegacy) {
+        // OneConfig's per-version jar pulls in its modules, PolyCompose and Pylon.
         modImplementation("org.polyfrost.oneconfig:$mcVersion-ornithe:$oneconfigVersion")
-        for (module in arrayOf("commands", "config", "config-impl", "events", "internal", "ui", "utils")) {
-            implementation("org.polyfrost.oneconfig:$module:$oneconfigVersion")
-        }
+        // The sky browser is a PolyCompose screen. PolyCompose ships Compose itself, so it stays out of our jar.
+        modImplementation("org.polyfrost:polycompose-$mcVersion-ornithe:${sc.properties.get<String>("deps.polycompose")}")
     } else {
         // OneConfig is a required mod at runtime; compile against it without pulling its whole tree.
         modCompileOnly("org.polyfrost.oneconfig:$mcVersion-fabric:$oneconfigVersion") { isTransitive = false }
@@ -95,6 +104,19 @@ if (isLegacy) {
     configurations.runtimeClasspath {
         exclude(group = "org.lwjgl.lwjgl", module = "lwjgl")
         exclude(group = "org.lwjgl.lwjgl", module = "lwjgl_util")
+    }
+
+    // PolyCompose draws Compose itself (its polycompose-compose-ui replaces Compose's ui module),
+    // so keep Skiko and the stock ui jars off the classpath, as PolyCompose's own build does.
+    configurations.configureEach {
+        exclude(group = "org.jetbrains.skiko")
+        for (module in arrayOf("ui", "ui-desktop", "ui-skiko", "ui-skiko-desktop")) {
+            exclude(group = "org.jetbrains.compose.ui", module = module)
+        }
+    }
+
+    extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
+        jvmToolchain(requiredJava.majorVersion.toInt())
     }
 }
 
@@ -118,6 +140,7 @@ tasks {
             "loader_version" to loaderVersion,
             "osl_version" to (sc.properties.getOrNull<String>("deps.osl") ?: ""),
             "oneconfig_version" to oneconfigVersion,
+            "polycompose_version" to (sc.properties.getOrNull<String>("deps.polycompose") ?: ""),
             "java_version" to requiredJava.majorVersion
         )
 

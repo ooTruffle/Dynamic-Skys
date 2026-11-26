@@ -57,8 +57,7 @@ and set its file name.
 ## Build
 The project uses [Stonecutter](https://stonecutter.kikugie.dev/) to build every Minecraft version from
 one source tree: 1.8.9 on Ornithe, and 1.21.1, 1.21.4, 1.21.5, 1.21.8 (1.21.7–1.21.8), 1.21.10
-(1.21.9–1.21.10), 1.21.11, 26.1, 26.2 and 26.3 on Fabric. The skies are drawn with OpenGL, so on 26.2 and
-later they need the game's Graphics API set to OpenGL (the default); on Vulkan the mod stays off and says so in chat.
+(1.21.9–1.21.10) and 1.21.11 on Fabric. 26.1–26.3 are paused until the world sky draws correctly there.
 ```
 ./gradlew buildAll
 ```

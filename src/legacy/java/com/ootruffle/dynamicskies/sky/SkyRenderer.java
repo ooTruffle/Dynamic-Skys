@@ -21,7 +21,9 @@ import net.minecraft.util.Vec3;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
+import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL21;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -260,6 +262,8 @@ public final class SkyRenderer {
      * yet get compiled a few per frame (about 6 ms' worth), so opening the sky
      * browser doesn't freeze the game while all of them compile at once.
      */
+    private final IntBuffer viewportBuf = BufferUtils.createIntBuffer(16);
+
     public void beginPreviewFrame() {
         compileDeadlineNanos = System.nanoTime() + 6_000_000L;
         compiledThisFrame = 0;
@@ -282,8 +286,10 @@ public final class SkyRenderer {
         if (shader == null || (type.usesImage() && image() == null)) {
             return PREVIEW_FAILED;
         }
-        Minecraft mc = Minecraft.getMinecraft();
         int prevProgram = currentProgram();
+        // Put back whatever viewport was set: the window, or an offscreen preview target.
+        GL11.glGetInteger(GL11.GL_VIEWPORT, viewportBuf);
+        int vx = viewportBuf.get(0), vy = viewportBuf.get(1), vw = viewportBuf.get(2), vh = viewportBuf.get(3);
 
         GL11.glViewport(x, y, w, h);
         GL11.glEnable(GL11.GL_SCISSOR_TEST);
@@ -310,7 +316,7 @@ public final class SkyRenderer {
         GlStateManager.color(1f, 1f, 1f, 1f);
 
         uploadSpectrum();
-        updateWorldColors(mc.theWorld, 1f);
+        updateWorldColors(Minecraft.getMinecraft().theWorld, 1f);
         fogR = fogG = fogB = 0f;
         previewing = true;
         try {
@@ -325,7 +331,7 @@ public final class SkyRenderer {
         GlStateManager.matrixMode(GL11.GL_MODELVIEW);
         GlStateManager.popMatrix();
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
-        GL11.glViewport(0, 0, mc.displayWidth, mc.displayHeight);
+        GL11.glViewport(vx, vy, vw, vh);
 
         GlStateManager.enableDepth();
         GlStateManager.depthMask(true);
@@ -333,6 +339,180 @@ public final class SkyRenderer {
         GlStateManager.enableCull();
         GlStateManager.enableTexture2D();
         return PREVIEW_OK;
+    }
+
+    /*
+     * Sky Lighting: the world picks up the sky's colour. A few times a second the current sky
+     * is drawn into a tiny framebuffer (two views up into the sky, facing opposite ways) and its
+     * average colour is read back through a pixel buffer one sample later, so the read never
+     * waits on the GPU. That colour, smoothed over time, tints the sky-light half of the
+     * lightmap; torch-lit areas keep their own colour.
+     */
+    private static final int AMBIENT_W = 16, AMBIENT_H = 8;
+    private static final long AMBIENT_INTERVAL_NANOS = 100_000_000L;
+    private Framebuffer ambientBuffer;
+    private final ByteBuffer ambientPixels = BufferUtils.createByteBuffer(AMBIENT_W * AMBIENT_H * 4);
+    private int ambientPbo;
+    private boolean ambientPboFilled;
+    private boolean ambientUsePbo = true;
+    private boolean ambientBroken;
+    private long lastAmbientNanos;
+    private long lastLightNanos;
+    /** The sky's measured average colour, before smoothing. */
+    private float sampleR = 1f, sampleG = 1f, sampleB = 1f;
+    private boolean sampled;
+    /** What the lightmap is tinted with now: eases toward the sample, and back to white when off. */
+    private float lightR = 1f, lightG = 1f, lightB = 1f, lightAmount;
+
+    /**
+     * Called from the lightmap update, just before the lightmap is uploaded. Tints the
+     * sky-lit entries of colors (index = sky level * 16 + block level) toward the sky.
+     */
+    public void tintLightmap(int[] colors, float partialTicks) {
+        DynamicSkiesConfig cfg = DynamicSkiesConfig.INSTANCE;
+        long now = System.nanoTime();
+        float dt = lastLightNanos == 0 ? 0f : Math.min(0.5f, (now - lastLightNanos) / 1e9f);
+        lastLightNanos = now;
+
+        float alpha = cfg.skyLighting && !ambientBroken ? computeAlpha(partialTicks) : 0f;
+        if (alpha > 0.001f) {
+            sampleAmbient(now);
+        }
+        // The colour the world sees: our sky over (or added to) the normal one.
+        float r = skyR, g = skyG, b = skyB;
+        float amount = 0f;
+        if (alpha > 0.001f && sampled) {
+            if (isOverlay()) {
+                r = Math.min(1f, r + sampleR * alpha);
+                g = Math.min(1f, g + sampleG * alpha);
+                b = Math.min(1f, b + sampleB * alpha);
+            } else {
+                r += (sampleR - r) * alpha;
+                g += (sampleG - g) * alpha;
+                b += (sampleB - b) * alpha;
+            }
+            amount = cfg.skyLightingStrength;
+        }
+        float ease = 1f - (float) Math.exp(-dt * 3f);
+        lightR += (r - lightR) * ease;
+        lightG += (g - lightG) * ease;
+        lightB += (b - lightB) * ease;
+        lightAmount += (amount - lightAmount) * ease;
+        if (lightAmount < 0.002f) {
+            return;
+        }
+
+        // Hue from the sky's colour (normalised to its brightness), plus a gentle brightness
+        // shift: dark skies dim the world a little, bright ones lift it, within limits.
+        float lum = 0.2126f * lightR + 0.7152f * lightG + 0.0722f * lightB;
+        float inv = 1f / Math.max(lum, 0.04f);
+        float bright = Math.max(0.65f, Math.min(1.35f, 0.65f + lum * 1.1f));
+        float tr = Math.min(2.5f, lightR * inv) * bright;
+        float tg = Math.min(2.5f, lightG * inv) * bright;
+        float tb = Math.min(2.5f, lightB * inv) * bright;
+
+        for (int i = 0; i < colors.length; i++) {
+            int sky = i >> 4, block = i & 15;
+            float w = lightAmount * (sky / 15f) * (1f - 0.8f * (block / 15f));
+            if (w <= 0f) continue;
+            int c = colors[i];
+            colors[i] = 0xFF000000
+                    | channel((c >> 16) & 0xFF, tr, w) << 16
+                    | channel((c >> 8) & 0xFF, tg, w) << 8
+                    | channel(c & 0xFF, tb, w);
+        }
+    }
+
+    private static int channel(int value, float tint, float weight) {
+        float factor = Math.max(0.35f, 1f + (tint - 1f) * weight);
+        return Math.min(255, Math.round(value * factor));
+    }
+
+    private void sampleAmbient(long now) {
+        if (now - lastAmbientNanos < AMBIENT_INTERVAL_NANOS) {
+            return;
+        }
+        lastAmbientNanos = now;
+        if (!OpenGlHelper.isFramebufferEnabled()) {
+            ambientBroken = true;
+            Log.warn("Sky Lighting needs framebuffers, which are turned off; it stays off.");
+            return;
+        }
+        Minecraft mc = Minecraft.getMinecraft();
+        // Last sample's pixels: the GPU finished them long ago, so this doesn't wait.
+        if (ambientPboFilled) {
+            readAmbient();
+        }
+
+        SkyType sky = current != null ? current : SkyType.byIndex(DynamicSkiesConfig.INSTANCE.sky);
+        if (ambientBuffer == null) {
+            ambientBuffer = new Framebuffer(AMBIENT_W, AMBIENT_H, false);
+            ambientBuffer.setFramebufferFilter(GL11.GL_NEAREST);
+        }
+        int prevFbo = GL11.glGetInteger(GL_FRAMEBUFFER_BINDING);
+        GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
+        ambientBuffer.bindFramebuffer(true);
+        GlStateManager.clearColor(0f, 0f, 0f, 1f);
+        GlStateManager.clear(GL11.GL_COLOR_BUFFER_BIT);
+        Entity view = mc.getRenderViewEntity();
+        float yaw = view != null ? view.rotationYaw : 0f;
+        int half = AMBIENT_W / 2;
+        int a = renderPreview(sky, 0, 0, half, AMBIENT_H, 0, 0, half, AMBIENT_H, yaw, -55f, 110f);
+        int b = renderPreview(sky, half, 0, half, AMBIENT_H, half, 0, half, AMBIENT_H, yaw + 180f, -55f, 110f);
+        if (a == PREVIEW_OK && b == PREVIEW_OK) {
+            requestAmbientRead();
+        }
+        OpenGlHelper.glBindFramebuffer(OpenGlHelper.GL_FRAMEBUFFER, prevFbo);
+        GL11.glViewport(0, 0, mc.displayWidth, mc.displayHeight);
+    }
+
+    private void requestAmbientRead() {
+        if (ambientUsePbo) {
+            try {
+                if (ambientPbo == 0) {
+                    ambientPbo = GL15.glGenBuffers();
+                    GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, ambientPbo);
+                    GL15.glBufferData(GL21.GL_PIXEL_PACK_BUFFER, (long) ambientPixels.capacity(), GL15.GL_STREAM_READ);
+                } else {
+                    GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, ambientPbo);
+                }
+                GL11.glReadPixels(0, 0, AMBIENT_W, AMBIENT_H, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, 0L);
+                ambientPboFilled = true;
+                return;
+            } catch (Throwable t) {
+                ambientUsePbo = false;
+                Log.warn("Pixel buffers aren't available; Sky Lighting reads the sky directly instead.");
+            } finally {
+                GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0);
+            }
+        }
+        // Fallback: read straight away. It waits on the GPU, but the image is tiny.
+        ambientPixels.clear();
+        GL11.glReadPixels(0, 0, AMBIENT_W, AMBIENT_H, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, ambientPixels);
+        averageAmbient();
+    }
+
+    private void readAmbient() {
+        ambientPboFilled = false;
+        ambientPixels.clear();
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, ambientPbo);
+        GL15.glGetBufferSubData(GL21.GL_PIXEL_PACK_BUFFER, 0L, ambientPixels);
+        GL15.glBindBuffer(GL21.GL_PIXEL_PACK_BUFFER, 0);
+        averageAmbient();
+    }
+
+    private void averageAmbient() {
+        long r = 0, g = 0, b = 0;
+        int count = AMBIENT_W * AMBIENT_H;
+        for (int i = 0; i < count; i++) {
+            r += ambientPixels.get(i * 4) & 0xFF;
+            g += ambientPixels.get(i * 4 + 1) & 0xFF;
+            b += ambientPixels.get(i * 4 + 2) & 0xFF;
+        }
+        sampleR = r / (count * 255f);
+        sampleG = g / (count * 255f);
+        sampleB = b / (count * 255f);
+        sampled = true;
     }
 
     private void beginFrame(float partialTicks) {

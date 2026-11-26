@@ -3,7 +3,7 @@ package com.ootruffle.dynamicskies;
 import com.ootruffle.dynamicskies.audio.AudioManager;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.ootruffle.dynamicskies.config.DynamicSkiesConfig;
-import com.ootruffle.dynamicskies.gui.SkyBrowserScreen;
+import com.ootruffle.dynamicskies.gui.SkyBrowser;
 import net.ornithemc.osl.entrypoints.api.ModInitializer;
 import org.polyfrost.oneconfig.api.commands.v1.CommandManager;
 import org.polyfrost.oneconfig.utils.v1.dsl.ScreensKt;
@@ -31,7 +31,7 @@ public class DynamicSkiesEntrypoint implements ModInitializer {
 
     private static <S> LiteralArgumentBuilder<S> withBrowse(LiteralArgumentBuilder<S> root) {
         return root.then(LiteralArgumentBuilder.<S>literal("browse").executes(ctx -> {
-            SkyBrowserScreen.open();
+            SkyBrowser.open();
             return 1;
         }));
     }

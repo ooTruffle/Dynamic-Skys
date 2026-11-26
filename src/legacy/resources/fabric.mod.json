@@ -21,7 +21,9 @@
         "fabricloader": ">=${loader_version}",
         "minecraft": "1.8.9",
         "osl": ">=${osl_version}",
-        "oneconfig": ">=${oneconfig_version}"
+        "oneconfig": ">=${oneconfig_version}",
+        "polycompose": ">=${polycompose_version}",
+        "fabric-language-kotlin": "*"
     },
     "contact": {
         "homepage": "https://github.com/ooTruffle/Dynamic-Skys",

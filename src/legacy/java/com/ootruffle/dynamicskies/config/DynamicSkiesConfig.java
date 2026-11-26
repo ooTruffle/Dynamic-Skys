@@ -2,7 +2,7 @@ package com.ootruffle.dynamicskies.config;
 
 import com.ootruffle.dynamicskies.Log;
 import com.ootruffle.dynamicskies.audio.AudioManager;
-import com.ootruffle.dynamicskies.gui.SkyBrowserScreen;
+import com.ootruffle.dynamicskies.gui.SkyBrowser;
 import com.ootruffle.dynamicskies.sky.SkyRenderer;
 import com.ootruffle.dynamicskies.sky.SkyType;
 import net.minecraft.client.Minecraft;
@@ -57,7 +57,7 @@ public class DynamicSkiesConfig extends Config {
     @Button(title = "Browse Skies", text = "Open", description = "See live previews of every sky and click one to use it. Also: /dynamicskies browse",
             category = "Sky", subcategory = "Sky")
     public void browseSkies() {
-        SkyBrowserScreen.open();
+        SkyBrowser.open();
     }
 
     @Dropdown(
@@ -115,6 +115,15 @@ public class DynamicSkiesConfig extends Config {
 
     @Switch(title = "Replace End Sky", category = "Sky", subcategory = "World")
     public boolean replaceEnd = false;
+
+    @Switch(title = "Sky Lights the World",
+            description = "Tint outdoor lighting with the sky's colour, so a purple sky gives a purple glow. "
+                    + "Torch-lit areas keep their own colour. Doesn't work with shader packs.",
+            category = "Sky", subcategory = "Lighting")
+    public boolean skyLighting = false;
+
+    @Slider(title = "Lighting Strength", min = 0.05f, max = 1f, step = 0.05f, category = "Sky", subcategory = "Lighting")
+    public float skyLightingStrength = 0.6f;
 
     @Dropdown(
             title = "Render Quality",
@@ -328,6 +337,7 @@ public class DynamicSkiesConfig extends Config {
         hideIf("overlayBlend", () -> skyMode == 0);
         hideIf("overlayCutoff", () -> skyMode == 0);
         hideIf("fogStrength", () -> !matchFog);
+        hideIf("skyLightingStrength", () -> !skyLighting);
         hideIf("audioDevice", () -> audioSource != 1);
         hideIf("fakeBpm", () -> audioSource != 2);
         for (String opt : new String[]{"reactivity", "smoothing", "beatFlash", "bassSpeed", "audioHue"}) {

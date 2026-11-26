@@ -20,8 +20,12 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
-/** The Minecraft versions Dynamic Skies builds for: 1.8.9 on Ornithe, the rest on Fabric. */
-val supportedVersions = listOf("1.8.9", "1.21.1", "1.21.4", "1.21.5", "1.21.8", "1.21.10", "1.21.11", "26.1", "26.2", "26.3")
+/**
+ * The Minecraft versions Dynamic Skies builds for: 1.8.9 on Ornithe, the rest on Fabric.
+ * 26.1-26.3 are left out for now: the world sky draws see-through there. Their version branches
+ * and stonecutter.properties.toml entries are kept, so adding them back here re-enables them.
+ */
+val supportedVersions = listOf("1.8.9", "1.21.1", "1.21.4", "1.21.5", "1.21.8", "1.21.10", "1.21.11")
 
 /** The version the sources are checked in as - must match `stonecutter active` in stonecutter.gradle.kts. */
 val vcs = "1.21.5"
